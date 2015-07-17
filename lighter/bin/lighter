@@ -1,0 +1,292 @@
+#!/usr/bin/env python
+#
+# light - manage lighttpd static file web servers
+#
+# light create -p <port> -d <docroot>
+# light show
+# light start
+#
+# Files:
+#   $HOME/.light/<port>.conf
+#   $HOME/.light/<port>.pid
+#   $HOME/.light/<port>.log
+
+import re
+import sys
+import os
+import argparse
+from os.path import expanduser
+from tabulate import tabulate
+import psutil
+from droplet_utils.lsof import listening_pids
+
+# -----------------------------
+
+CONF_TEMPLATE='''
+# A lighttpd.conf template for serving static files.
+
+server.document-root = "{{document_root}}" 
+server.port = {{port}}
+dir-listing.activate = "enable"
+index-file.names     = ( "index.php", "index.html", "index.lighttpd.html" )
+
+mimetype.use-xattr        = "disable"
+
+##
+## mimetype mapping
+##
+mimetype.assign             = (
+  ".svg"          =>      "image/svg+xml",
+  ".pdf"          =>      "application/pdf",
+  ".sig"          =>      "application/pgp-signature",
+  ".spl"          =>      "application/futuresplash",
+  ".class"        =>      "application/octet-stream",
+  ".ps"           =>      "application/postscript",
+  ".torrent"      =>      "application/x-bittorrent",
+  ".dvi"          =>      "application/x-dvi",
+  ".gz"           =>      "application/x-gzip",
+  ".pac"          =>      "application/x-ns-proxy-autoconfig",
+  ".swf"          =>      "application/x-shockwave-flash",
+  ".tar.gz"       =>      "application/x-tgz",
+  ".tgz"          =>      "application/x-tgz",
+  ".tar"          =>      "application/x-tar",
+  ".zip"          =>      "application/zip",
+  ".mp3"          =>      "audio/mpeg",
+  ".m3u"          =>      "audio/x-mpegurl",
+  ".wma"          =>      "audio/x-ms-wma",
+  ".wax"          =>      "audio/x-ms-wax",
+  ".ogg"          =>      "application/ogg",
+  ".wav"          =>      "audio/x-wav",
+  ".gif"          =>      "image/gif",
+  ".jpg"          =>      "image/jpeg",
+  ".jpeg"         =>      "image/jpeg",
+  ".png"          =>      "image/png",
+  ".xbm"          =>      "image/x-xbitmap",
+  ".xpm"          =>      "image/x-xpixmap",
+  ".xwd"          =>      "image/x-xwindowdump",
+  ".css"          =>      "text/css",
+  ".html"         =>      "text/html",
+  ".htm"          =>      "text/html",
+  ".js"           =>      "text/javascript",
+  ".asc"          =>      "text/plain",
+  ".c"            =>      "text/plain",
+  ".cpp"          =>      "text/plain",
+  ".log"          =>      "text/plain",
+  ".conf"         =>      "text/plain",
+  ".text"         =>      "text/plain",
+  ".txt"          =>      "text/plain",
+  ".spec"         =>      "text/plain",
+  ".dtd"          =>      "text/xml",
+  ".xml"          =>      "text/xml",
+  ".mpeg"         =>      "video/mpeg",
+  ".mpg"          =>      "video/mpeg",
+  ".mov"          =>      "video/quicktime",
+  ".qt"           =>      "video/quicktime",
+  ".avi"          =>      "video/x-msvideo",
+  ".asf"          =>      "video/x-ms-asf",
+  ".asx"          =>      "video/x-ms-asf",
+  ".wmv"          =>      "video/x-ms-wmv",
+  ".bz2"          =>      "application/x-bzip",
+  ".tbz"          =>      "application/x-bzip-compressed-tar",
+  ".tar.bz2"      =>      "application/x-bzip-compressed-tar",
+  ".rpm"          =>      "application/x-rpm",
+  ".json"         =>      "application/json",
+  # make the default mime type application/octet-stream.
+  ""              =>      "application/octet-stream",
+ )
+'''
+
+def read_file(path):
+  with open (path) as f:
+    contents = f.read()
+    return contents
+
+def write_file(path, contents):
+  with open(path, "w") as f:
+    f.write(contents)
+
+def render_template(mu_template, vars):
+  """Render a mu-template with values from a hash."""
+  def lookup(match):
+    return vars.get(match.group(1), '')
+  return re.sub('{{(\w+?)}}', lookup, mu_template)
+
+def make_config(port, docroot):
+  """Return the config file for a specific port and docroot."""
+  vars = { 'document_root': docroot, 'port': str(port) }
+  return render_template(CONF_TEMPLATE, vars)
+
+# -----------------------------
+
+class Server():
+  def __init__(self, port=None, docroot=None, config_path=None, pid_path=None, log_path=None, prefix=None):
+    self.port = port
+    self.docroot = docroot
+    self.config_path = config_path or (prefix and prefix + ".conf")
+    self.pid_path = pid_path or (prefix and prefix + ".pid")
+    self.log_path = pid_path or (prefix and prefix + ".log")
+    pass
+
+def die(msg):
+  raise msg
+
+def is_config_file(leaf):
+  m = re.match('(\d+).conf\Z', leaf)
+  if m:
+    return m.group(1)
+  else:
+    return None
+
+def mk_config_path(config_root, port):
+  """Return the path of the config file for a port."""
+  config_path = os.path.join(config_root, str(port) + ".conf")
+  return config_path
+
+def write_config(config_root, port, contents):
+  if not os.path.isdir(config_root):
+    if os.path.exists(config_root):
+      die("not a directory: {}".format(config_root))
+    os.mkdir(config_root)
+    print "Created directory {}".format(config_root)
+  path = mk_config_path(config_root, port)
+  write_file(path, contents)
+  return path
+
+def parse_docroot(config_text):
+  """Return the docroot setting of a lighttpd.conf file."""
+  m = re.search('^\s*server\.document-root\s*=\s*"(.*?)"', config_text, re.M)
+  if m:
+    return m.group(1)
+  else:
+    return "???"
+
+def read_configs(config_root):
+  """Read the config files in a directory."""
+  if not os.path.isdir(config_root):
+    return []
+  files = [ f for f in os.listdir(config_root) if is_config_file(f) and os.path.isfile(os.path.join(config_root, f)) ]
+  all_configs = []
+  for f in files:
+    port = is_config_file(f)
+    path = os.path.join(config_root, f)
+    config = read_file(path)
+    docroot = parse_docroot(config)
+    s = Server(port=int(port),
+               docroot=docroot,
+               config_path=path,
+               prefix= os.path.join(config_root, port) )
+    all_configs.append(s)
+  return all_configs
+
+def process_cmdline(pid):
+  p = psutil.Process(pid)
+  cl = []
+  try:
+    cl = p.cmdline()
+  except psutil.Error:
+    pass
+  return cl
+
+def show_servers(config_root):
+  all_configs = read_configs(config_root)
+
+  if all_configs:
+    listeners = listening_pids([ c.port for c in all_configs ])
+
+    sorted_configs = sorted(all_configs, key=lambda s: s.port)
+
+    rows = []
+    for s in sorted_configs:
+      pids = [ lpid for lport, lpid in listeners if lport == str(s.port) ]
+
+      pids_col = ','.join([ str(p) for p in pids ])
+
+      if not pids:
+        cmd = ''
+      elif len(pids) > 1:
+        cmd = '?'
+      else:
+        cmdline = process_cmdline(pids[0])
+        if cmdline:
+          cmd = cmdline[0]
+
+        # look up command
+      
+      row = [s.port, pids_col, cmd, s.docroot ]
+      rows.append(row)
+    
+    print tabulate(rows, headers=['port', 'pid', 'command', 'docroot'])
+  else:
+    print "No servers configured."
+
+def create_server(config_root, port, docroot):
+  # port is an int
+  all_configs = read_configs(config_root)
+  configs = [ s for s in all_configs if s.port == port ]
+  if configs:
+    return die("server config for port {} already exists".format(port))
+  if not os.path.isabs(docroot):
+    docroot = os.path.abspath(docroot)
+  conf = make_config(port, docroot)
+  path = write_config(config_root, port, conf)
+  print "Wrote {}".format(path)
+
+def stop_server(config_root, port, opts=None):
+  print "Not implemented"
+  pass
+
+def start_server(config_root, port, opts=None):
+  path = mk_config_path(config_root, port)
+  if not os.path.isfile(path):
+    return die("no config file for port {}".format(port))
+  cmd = ['lighttpd', '-f', path]
+  print "Running:", ' '.join(cmd)
+  os.execvp(cmd[0], cmd)
+
+def make_parser():
+  parser = argparse.ArgumentParser()
+
+  subp = parser.add_subparsers(title = 'Subcommands')
+
+  showp = subp.add_parser("show", help='Show configured servers')
+  showp.set_defaults(which = 'show')
+
+  createp = subp.add_parser("create", help='Create a new server config')
+  createp.set_defaults(which = 'create')
+  createp.add_argument('-p', type=int, help='listen port')
+  createp.add_argument('-d', type=str, help='document root')
+
+  startp = subp.add_parser("start", help='Start HTTP server')
+  startp.set_defaults(which = 'start')
+  startp.add_argument('port', help='server port or name', type=int )
+
+  stopp = subp.add_parser("stop", help='Stop HTTP server')
+  stopp.set_defaults(which = 'stop')
+  stopp.add_argument('port', help='listen port', type=int )
+
+  # pidp = subp.add_parser("pid", help='Display server pid')
+  # pidp.set_defaults(which = 'pid')
+  # pidp.add_argument('port', help='listen port', type=int )
+
+  return parser
+
+def main():
+  p = make_parser()
+  home = expanduser("~")
+  config_root = os.path.join(home, '.lighttpd')
+  args = sys.argv[1:]
+
+  if not args:
+    args = ['show']
+  ns = p.parse_args(args)
+
+  cmd = ns.which
+  if cmd == 'create':
+    create_server(config_root, ns.p, ns.d)
+  elif cmd == 'start':
+    start_server(config_root, ns.port)
+  elif cmd == 'show':
+    show_servers(config_root)
+
+main()
+

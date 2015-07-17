@@ -1,0 +1,323 @@
+#!/bin/bash
+#
+# Script to set up a droplet.
+
+read -d '' -r ALL_COMMANDS <<END
+build-pandoc 
+build-pandoc-as-user
+debian-init 
+debian-install-pkgs 
+debian-test-all
+fedora-init
+fedora-install-pkgs
+fedora-test-all
+fetch-ghc-7-10-1-bindist
+fetch-ghc-7-8-4-bindist
+git-clone-haskell-platform
+git-clone-haskell-platform-erantapaa
+git-clone-hl
+install-haskell-platform
+install-hp-2014-2-0-0
+missing-libs 
+setup-swap
+setup-user
+usage 
+END
+
+run () {
+  echo "+ $@"
+  "$@"
+}
+
+run_conditionally () {
+  marker="$1"
+  shift
+  if [ ! -e "$marker" ]; then
+    run "$@"
+    touch "$marker"
+  fi
+}
+
+assert_running_as_root () {
+  if [ ! -w / ]; then
+    echo Must be running as root
+    exit 1
+  fi
+}
+
+executable_exists() {
+  type "$1" > /dev/null 2>&1
+}
+
+cmd_setup_swap() {
+  swap_path="/swap"
+  swap_size=4096       # size in MB
+
+  if ! test -e "$swap_path"; then
+    if executable_exists fallocate; then
+      run fallocate -l ${swap_size}M "$swap_path"
+    else
+      echo Using dd to create a swap file...
+      run dd if=/dev/zero of=/swap bs=1024 count=$[$swap_size*1024]
+    fi
+    run chmod 600 $swap_path
+    run mkswap $swap_path
+    run swapon $swap_path
+  fi
+
+  if ! grep -q swap /etc/fstab; then
+    echo "adding $swap_path to /etc/fstab"
+    echo "$swap_path none swap defaults 0 0" >> /etc/fstab
+  fi
+}
+
+copy_file_to_user() {
+  # Copy a file and give a user ownership and control over it.
+  assert_running_as_root
+  local src="$1"
+  local dest="$2"
+  local user="$3"
+  run cp "$src" "$dest"
+  run chown $user.$user "$dest"
+}
+
+cmd_setup_user() {
+  user="$1"
+  if [ -z "$user" ]; then
+    echo "setup_user: no user name supplied"
+    return
+  fi
+
+  if ! grep "^$user" /etc/passwd; then
+    home=/home/$user
+    run useradd -m -d $home -s /bin/bash -k /etc/skel $user
+
+    run mkdir $home/.ssh
+    run chmod go-rwx $home/.ssh
+    run chown $user.$user $home/.ssh
+
+    run cp /root/.ssh/authorized_keys $home/.ssh/
+
+    run chown $user.$user $home/.ssh/authorized_keys
+    run chmod go-rwx $home/.ssh/authorized_keys
+
+    run mkdir $home/download
+    run chown $user.$user $home/download
+  fi
+}
+
+set_user() {
+  user="$1"
+  home="/home/$user"
+}
+
+check_var () {
+  if [ -z "$2" ]; then
+    echo "variable $1 is not set"
+    exit 1
+  fi
+}
+
+create_dir () {
+  check_var user "$user"
+  # create_dir dir
+  local dir="$1"
+  if [ ! -d "$dir" ]; then
+    run mkdir -p "$dir"
+  fi
+  run chown $user.$user $dir
+  run chmod 0755 $dir
+}
+
+fetch_url() {
+  check_var home "$home"
+  dir="$home/download"
+  create_dir "$dir"
+  wget -P "$dir" "$@"
+}
+
+get_clone() {
+  check_var home "$home"
+  dir="$home/repos"
+  create_dir "$dir"
+  git clone "$1" "$dir"
+}
+
+cmd_fetch_ghc_7_10_1_bindist() {
+  fetch_url https://www.haskell.org/ghc/dist/7.10.1/ghc-7.10.1-x86_64-unknown-linux-deb7.tar.xz
+}
+
+cmd_fetch_ghc_7_8_4_bindist() {
+  fetch_url https://www.haskell.org/ghc/dist/7.8.4/ghc-7.8.4-x86_64-unknown-linux-deb7.tar.xz
+}
+
+cmd_git_clone_haskell_platform() {
+  git_clone https://github.com/haskell/haskell-platform
+}
+
+cmd_git_clone_haskell_platform_erantapaa() {
+  git_clone https://github.com/erantapaa/haskell-platform
+}
+
+cmd_git_clone_hl() {
+  git_clone https://github.com/haskell-infra/hl
+}
+
+cmd_install_hp_2014_2_0_0 () {
+  assert_running_as_root
+  # Install the 2014.2.0.0 version of the Haskell Platform
+  dir=/tmp
+  hptar = haskell-platform-2014.2.0.0-unknown-linux-x86_64.tar.gz
+  # install the 2014.2.0.0 Haskell Platform
+  if [ ! -d /usr/local/haskell ]; then
+    if [ -e "$dir/$hptar" ] ; then
+      run wget -P $dir https://www.haskell.org/platform/download/2014.2.0.0/haskell-platform-2014.2.0.0-unknown-linux-x86_64.tar.gz
+    fi
+    if [ ! -e "$dir/$hptar" ]; then
+      echo "=== failed to download $hptar"
+      exit 1
+    fi
+    cd /
+    run sudo tar xvf "$dir/$hptar"
+    run sudo /usr/local/haskell/ghc-7.8.3-x86_64/bin/activate-hs
+  fi
+
+  run cabal update
+  run cabal install cabal-install hscolour
+}
+
+fetch_url() {
+  local url="$1"
+  local dir="$2"
+  local dest="$dir/$(basename $url)"
+  if [ ! -e "$dest" ]; then
+    run wget -P "$dir" "$url"
+  fi
+  result="$dest"
+}
+
+cmd_missing_libs () {
+  cd /usr/local/haskell
+  local out=/tmp/ldd-report-$$
+  find . -name '*.so' | while read x; do echo "=== $x"; ldd $x; done > $out
+  echo "Report written to $out"
+  echo "Missing libraries:"
+  grep -v libHS "$out" | grep -i 'not found'
+}
+
+fetch_rc1() {
+  local dir="$1"
+  local url="http://www.ozonehouse.com/mark/platform/haskell-platform-7.10.1.20150612-x86_64-unknown-linux-deb7.tar.gz"
+  fetch_url $url "$dir"
+}
+
+cmd_install_haskell_platform() {
+  cd
+  fetch_rc1 "download"
+  run tar xf "$result"
+  run ./install-haskell-platform.sh
+}
+
+cmd_debian_init () {
+  assert_running_as_root
+  cmd_setup_swap
+  cmd_setup_user erantapaa
+  run_conditionally "/did-apt-get-update" apt-get update
+  run apt-get install -y tmux
+  run_conditionally "/did-install-haskell" cmd_install_haskell_platform
+}
+
+cmd_debian_install_pkgs () {
+  assert_running_as_root
+  run_conditionally "/did-apt-get-update" apt-get update
+  run apt-get install -y build-essential libgmp10-dev zlib1g-dev libglu1-mesa
+}
+
+cmd_debian_test_all () {
+  assert_running_as_root
+  cmd_debian_init
+  cmd_debian_install_pkgs
+  cmd_build_pandoc_as_user
+}
+
+cmd_build_pandoc_as_user() {
+  chmod a+rx /root/setup
+  local user_setup="/home/erantapaa/setup"
+  if [ ! -e "$user_setup" ]; then
+    copy_file_to_user /root/setup "$user_setup"  erantapaa
+    run chmod a+rx "$user_setup"
+  fi
+  tmp=/tmp/build-pandoc.$$
+  echo "build output redirected to $tmp"
+  su - erantapaa "$user_setup" build-pandoc > "$tmp" 2>&1 &
+}
+
+cmd_fedora_init() {
+  assert_running_as_root
+  cmd_setup_swap
+  cmd_setup_user erantapaa
+  yum install -y tmux wget
+  run_conditionally "/did-install-haskell" cmd_install_haskell_platform
+}
+
+cmd_fedora_install_pkgs() {
+  assert_running_as_root
+  yum groupinstall -y 'Development Tools'
+  yum install -y gmp-devel zlib-devel freeglut mesa-libGLU
+}
+
+cmd_fedora_test_all() {
+  assert_running_as_root
+  cmd_fedora_init
+  cmd_fedora_install_pkgs
+  cmd_build_pandoc_as_user
+}
+
+cmd_build_pandoc () {
+  pandoc_dir=pandoc-1.14.0.4
+  if [ ! -d $pandoc_dir ]; then
+    run_conditionally "$HOME/did-cabal-update" cabal update
+    run cabal get pandoc-1.14.0.4
+  fi
+  cd "$pandoc_dir" || { echo "unable to cd into $pandoc_dir"; exit 1
+    }
+  run cabal sandbox init
+  run cabal install --only-dependencies
+  run cabal build
+  echo "=== done building pandoc"
+}
+
+cmd_usage () {
+  echo
+  echo "Usage: setup <command>"
+  echo
+  echo "Commands:"
+  for cmd in $ALL_COMMANDS; do
+    echo "  $cmd"
+  done
+}
+
+list_contains() {
+  for word in $1; do
+    [[ $word = "$2" ]] && return 0
+  done
+  return 1
+}
+
+main () {
+  if [ "$#" == 0 ]; then
+    cmd_usage
+    exit 0
+  elif list_contains "$ALL_COMMANDS" "${1//_/-}"; then
+    local cmd="${1//-/_}"
+    shift
+    set -e
+    "cmd_$cmd" "$@"
+  else
+    echo "unrecognized command: $1"
+    exit 1
+  fi
+}    
+
+main "$@"
+
