@@ -76,7 +76,8 @@ cmd_debian_stack_init() {
   run_conditionally "/did-apt-get-update" apt-get update
   run apt-get install -y tmux
   run apt-get install -y build-essential libgmp10-dev zlib1g-dev libglu1-mesa
-  run apt-get install -y lighttpd
+  run apt-get install -y libicu-dev
+  run apt-get install -y lighttpd git
 
   cmd_install_stack
 }
