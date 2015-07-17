@@ -21,6 +21,8 @@ install-hp-2014-2-0-0
 missing-libs 
 setup-swap
 setup-user
+install-stack
+debian-stack-init
 usage 
 END
 
@@ -47,6 +49,36 @@ assert_running_as_root () {
 
 executable_exists() {
   type "$1" > /dev/null 2>&1
+}
+
+cmd_install_stack() {
+  local url='https://github.com/commercialhaskell/stack/releases/download/v0.1.2.0/stack-0.1.2.0-x86_64-linux.gz'
+  local prog=/usr/local/bin/stack
+  local tmp="$prog.tmp"
+  local dir="/root/download"
+  if [ ! -e "$prog" ]; then
+    [ -d "$dir" ] || run mkdir "/root/download"
+    fetch_url "$url" "$dir"
+    gunzip -c "$result" > "$tmp"
+    mv "$tmp" "$prog"
+  fi 
+  run chmod a+rx "$prog"
+}
+
+cmd_install_lighter() {
+  run apt-get install -y lighttpd
+}
+
+cmd_debian_stack_init() {
+  assert_running_as_root
+  cmd_setup_swap
+  cmd_setup_user erantapaa
+  run_conditionally "/did-apt-get-update" apt-get update
+  run apt-get install -y tmux
+  run apt-get install -y build-essential libgmp10-dev zlib1g-dev libglu1-mesa
+  run apt-get install -y lighttpd
+
+  cmd_install_stack
 }
 
 cmd_setup_swap() {
@@ -129,13 +161,6 @@ create_dir () {
   run chmod 0755 $dir
 }
 
-fetch_url() {
-  check_var home "$home"
-  dir="$home/download"
-  create_dir "$dir"
-  wget -P "$dir" "$@"
-}
-
 get_clone() {
   check_var home "$home"
   dir="$home/repos"
@@ -189,6 +214,11 @@ cmd_install_hp_2014_2_0_0 () {
 fetch_url() {
   local url="$1"
   local dir="$2"
+  if [ -z "$dir" ]; then
+    echo "fetch_url - no directory specified"
+    echo "  url = $url"
+    exit 1
+  fi
   local dest="$dir/$(basename $url)"
   if [ ! -e "$dest" ]; then
     run wget -P "$dir" "$url"
