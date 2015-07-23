@@ -42,6 +42,10 @@ a new instance.
 
 A Python script to create and control lighttpd instances.
 
+Install with:
+
+    python setup.py install
+
 Commands:
 
     lighter create -p PORT -d DOC-ROOT   -- create a new lighttpd instance

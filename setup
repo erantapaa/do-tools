@@ -3,26 +3,23 @@
 # Script to set up a droplet.
 
 read -d '' -r ALL_COMMANDS <<END
-build-pandoc 
-build-pandoc-as-user
-debian-init 
-debian-install-pkgs 
-debian-test-all
-fedora-init
-fedora-install-pkgs
-fedora-test-all
-fetch-ghc-7-10-1-bindist
-fetch-ghc-7-8-4-bindist
-git-clone-haskell-platform
-git-clone-haskell-platform-erantapaa
-git-clone-hl
-install-haskell-platform
-install-hp-2014-2-0-0
-missing-libs 
-setup-swap
-setup-user
-install-stack
-debian-stack-init
+build_pandoc 
+build_pandoc_as_user
+fedora_init
+fedora_install_pkgs
+fedora_test_all
+fetch_ghc_7_10_1_bindist
+fetch_ghc_7_8_4_bindist
+git_clone_haskell_platform
+git_clone_haskell_platform_erantapaa
+git_clone_hl
+install_haskell_platform
+install_hp_2014_2_0_0
+missing_libs 
+setup_swap
+setup_user
+debian_init 
+install_stack
 usage 
 END
 
@@ -69,17 +66,21 @@ cmd_install_lighter() {
   run apt-get install -y lighttpd
 }
 
-cmd_debian_stack_init() {
-  assert_running_as_root
-  cmd_setup_swap
-  cmd_setup_user erantapaa
-  run_conditionally "/did-apt-get-update" apt-get update
-  run apt-get install -y tmux
-  run apt-get install -y build-essential libgmp10-dev zlib1g-dev libglu1-mesa
-  run apt-get install -y libicu-dev
-  run apt-get install -y lighttpd git
+setup_gitconfig() {
+  local user="$1"
+  local fullname="$2"
+  local email="$3"
+  local path="/home/$user/.gitconfig"
 
-  cmd_install_stack
+  if [ ! -e "$path" ]; then
+    cat > "$path" <<END
+[user]
+        email = $email
+        name = $fullname
+[core]
+        editor = vi
+END
+  fi
 }
 
 cmd_setup_swap() {
@@ -170,11 +171,11 @@ get_clone() {
 }
 
 cmd_fetch_ghc_7_10_1_bindist() {
-  fetch_url https://www.haskell.org/ghc/dist/7.10.1/ghc-7.10.1-x86_64-unknown-linux-deb7.tar.xz
+  download_url https://www.haskell.org/ghc/dist/7.10.1/ghc-7.10.1-x86_64-unknown-linux-deb7.tar.xz
 }
 
 cmd_fetch_ghc_7_8_4_bindist() {
-  fetch_url https://www.haskell.org/ghc/dist/7.8.4/ghc-7.8.4-x86_64-unknown-linux-deb7.tar.xz
+  download_url https://www.haskell.org/ghc/dist/7.8.4/ghc-7.8.4-x86_64-unknown-linux-deb7.tar.xz
 }
 
 cmd_git_clone_haskell_platform() {
@@ -210,6 +211,27 @@ cmd_install_hp_2014_2_0_0 () {
 
   run cabal update
   run cabal install cabal-install hscolour
+}
+
+make_directory() {
+  local dir="$1"
+  if [ ! -d "$dir" ]; then
+    run mkdir "$dir"
+    if [ ! -d "$dir" ]; then
+      return 1
+    fi
+  fi
+  return 0
+}
+
+download_url() {
+  local dir="$HOME/download"
+  if make_directory "$dir"; then
+    fetch_url "$1" "$dir"
+  else
+    echo "unable to create directory $dir"
+    exit 1
+  fi
 }
 
 fetch_url() {
@@ -255,20 +277,17 @@ cmd_debian_init () {
   cmd_setup_user erantapaa
   run_conditionally "/did-apt-get-update" apt-get update
   run apt-get install -y tmux
-  run_conditionally "/did-install-haskell" cmd_install_haskell_platform
-}
-
-cmd_debian_install_pkgs () {
-  assert_running_as_root
-  run_conditionally "/did-apt-get-update" apt-get update
   run apt-get install -y build-essential libgmp10-dev zlib1g-dev libglu1-mesa
+  run apt-get install -y libicu-dev
+  run apt-get install -y lighttpd git
+  run apt-get install -y python-dev python-setuptools python-pip
+
+  setup_gitconfig erantapaa "Erik Rantapaa" erantapaa@gmail.com
 }
 
-cmd_debian_test_all () {
-  assert_running_as_root
+cmd_debian_stack_init() {
   cmd_debian_init
-  cmd_debian_install_pkgs
-  cmd_build_pandoc_as_user
+  cmd_install_stack
 }
 
 cmd_build_pandoc_as_user() {
@@ -287,8 +306,19 @@ cmd_fedora_init() {
   assert_running_as_root
   cmd_setup_swap
   cmd_setup_user erantapaa
+
   yum install -y tmux wget
-  run_conditionally "/did-install-haskell" cmd_install_haskell_platform
+  yum groupinstall -y 'Development Tools'
+  yum install -y gmp-devel zlib-devel freeglut mesa-libGLU
+
+  yum install -y lighttpd git
+  setup_gitconfig erantapaa "Erik Rantapaa" erantapaa@gmail.com
+
+  # to be figured out...
+  # run apt-get install -y build-essential libgmp10-dev zlib1g-dev libglu1-mesa
+  # run apt-get install -y libicu-dev
+  # run apt-get install -y lighttpd git
+  # run apt-get install -y python-dev python-setuptools python-pip
 }
 
 cmd_fedora_install_pkgs() {
@@ -324,7 +354,7 @@ cmd_usage () {
   echo
   echo "Commands:"
   for cmd in $ALL_COMMANDS; do
-    echo "  $cmd"
+    echo "  ${cmd//_/-}"
   done
 }
 
