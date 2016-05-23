@@ -1,0 +1,6 @@
+#!/bin/sh
+
+host="$1"
+scp ./setup root@"$1":setup
+ssh ./setup root@"$1" ./setup debian-init
+

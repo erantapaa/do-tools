@@ -1,0 +1,24 @@
+#!/usr/bin/env python
+
+import functools
+import json
+import re
+import tarfile
+import urllib
+
+URL = "https://api.github.com/repos/commercialhaskell/stack/releases/latest"
+
+def compose(*funcs):
+    return lambda x: functools.reduce(lambda v, f: f(v), funcs, x)
+
+extract_stack_content = compose(
+    lambda t: urllib.urlopen(t),
+    lambda t: json.load(t)["assets"],
+    lambda t: map(lambda x: x["browser_download_url"], t),
+    lambda t: filter(lambda x: re.match(u"^.*osx.tar.gz$", x) != None, t)[0],
+    lambda t: urllib.urlopen(t),
+    lambda t: tarfile.open(fileobj = t, mode="r|gz").extractall()
+    )
+
+extract_stack_content(URL)
+

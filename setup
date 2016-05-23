@@ -369,7 +369,7 @@ main () {
   if [ "$#" == 0 ]; then
     cmd_usage
     exit 0
-  elif list_contains "$ALL_COMMANDS" "${1//_/-}"; then
+  elif list_contains "$ALL_COMMANDS" "${1//-/_}"; then
     local cmd="${1//-/_}"
     shift
     set -e
