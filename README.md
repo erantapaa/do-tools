@@ -1,10 +1,5 @@
 A collection of scripts useful for working with Digital Ocean instances.
 
-- tugboat
-- dsync
-- setup
-- lighter
-
 ### tugboat
 
 Provides a useful CLI to the Digital Ocean API.
@@ -13,21 +8,23 @@ Install with:
 
     pip install tugboat
 
-Requires an API v1 key. (Digital Ocean control panel >> API >> View API v1).
+Requires an API v2 key.
 
-### dsync
+### do-sync
 
-Creates `$HOME/.do_ssh_config` from your current set of droplet.
+Adds Digital Ocean droplet hosts to your `.ssh/config` file.
 
-Requires `tugboat`. After running `dsync`, ssh or scp to a droplet with:
+Typical usage:
 
-    ssh -F ~/.do_ssh_config {droplet-name} ...
-    scp -F ~/.do_ssh_config {droplet-name} ...
+    $ do-sync
 
-Setting up the following aliases can make this more convenient:
+### do-init
 
-    alias dssh="ssh -F ~/.do_ssh_config"
-    alias dscp="scp -F ~/.do_ssh_config"
+Usage:
+
+    $ do-init hostname
+
+(First perform a `do-ssh sync`)
 
 ### setup
 
@@ -37,21 +34,4 @@ a new instance.
     setup                  -- displays available commands
     setup debian-init      -- sets up swap, creates a user account
                               performs apt-get update
-
-### lighter
-
-A Python script to create and control lighttpd instances.
-
-Install with:
-
-    python setup.py install
-
-Commands:
-
-    lighter create -p PORT -d DOC-ROOT   -- create a new lighttpd instance
-    lighter start PORT                   -- start an instance
-    lighter stop PORT                    -- stop an instance
-    lighter show                         -- show configured instances
-
-Requires `lighttpd`.
 

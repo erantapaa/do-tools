@@ -10,19 +10,10 @@ def make_parser():
   """Create the argument parser."""
   parser = argparse.ArgumentParser()
 
-  subp = parser.add_subparsers(title = "Subcommands", dest="which")
-
-  listp = subp.add_parser("list")
-
-  showip = subp.add_parser("ip")
-  showip.add_argument('hosts', nargs='*')
-  showip.add_argument("-c", action="store", help="path to ssh config file")
-
-  syncp = subp.add_parser("sync")
-  syncp.add_argument("-c", action="store", help="ssh config file to read")
-  syncp.add_argument("-o", action="store", help="ssh config file to write")
-  syncp.add_argument("-n", action="store_true", dest="dryrun", help="dry run mode - emits config file to STDOUT")
-  syncp.add_argument("-v", action="store_true", dest="verbose", help="verbose output")
+  parser.add_argument("-c", action="store", metavar="PATH", help="ssh config file to read")
+  parser.add_argument("-o", action="store", metavar="PATH", help="ssh config file to write")
+  parser.add_argument("-n", action="store_true", dest="dryrun", help="dry-run mode")
+  # parser.add_argument("-v", action="store_true", dest="verbose", help="verbose output")
 
   return parser
 
@@ -49,24 +40,26 @@ def cmd_sync(opts):
     print "removing", h.host()
   for d in add:
     print "adding", d.host, "->", d.ip_addr
+  has_changes = remove or add
+  if not has_changes:
+    print "(no changes)"
 
-  S.add_entries(hnew, [ d.entry for d in add ])
   # hnew is modified by add_entries
+  S.add_entries(hnew, [ d.entry for d in add ])
 
   if not opts.dryrun:
     out_path = opts.o or ssh_config_path
     if out_path == "-":
       print S.to_config(hnew)
     else:
-      S.write_ssh_config(out_path, hnew)
-      print "wrote", out_path
+      if has_changes:
+        S.write_ssh_config(out_path, hnew)
+        print "wrote", out_path
 
 def main():
   parser = make_parser()
   opts = parser.parse_args()
-
-  if opts.which == "sync":
-    cmd_sync(opts)
+  cmd_sync(opts)
 
 if __name__ == '__main__':
   main()
