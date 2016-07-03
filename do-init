@@ -1,6 +1,24 @@
 #!/bin/sh
 
+if [ ! -d "./setup.d" ]; then
+  echo missing ./setup.d
+  exit 1
+fi
+
+if [ ! -e "./setup" ]; then
+  echo missing ./setup
+  exit 1
+fi
+
+if [ "$1" = "" ]; then
+  echo usage: do-init host
+  exit 1
+fi
+
+# echo got here; exit 1
+
 host="$1"
-scp ./setup root@"$1":setup
-ssh ./setup root@"$1" ./setup debian-init
+scp -r ./setup.d root@"$host":
+scp ./setup root@"$host":setup
+ssh ./setup root@"$host" ./setup debian-init
 

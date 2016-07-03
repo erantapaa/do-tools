@@ -1,0 +1,14 @@
+#!/usr/bin/env perl
+
+# display the inet4 addresses
+
+sub main {
+  my $out = `ifconfig -a`;
+  while ($out =~ m/^\s+inet (?:addr)?:?\s*([\d.]+)/gm) {
+    next if ($1 eq "127.0.0.1");
+    print "$1\n";
+  }
+}
+
+main()
+

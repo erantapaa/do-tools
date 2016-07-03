@@ -137,6 +137,22 @@ cmd_setup_user() {
 
     run mkdir $home/download
     run chown $user.$user $home/download
+
+    mkdir $home/bash
+    chown $user.$user $home/bash
+
+    if [ -e fgm.bash ]; then
+      cp fgm.bash $home/bash/
+      chown $user.$user $home/bash
+    fi
+
+    if [ -e "$home/.profile" ]; then
+      cat >> "$home.profile" << '__END__'
+
+[ -r "$HOME/bash/fgm.bash" ] && source "$HOME/bash/fgm.bash"
+
+__END__
+     curl https://raw.githubusercontent.com/erantapaa/fgm-bash/master/fgm.bash > "$home/bash/fgm.bash"
   fi
 }
 
