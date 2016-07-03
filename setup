@@ -23,6 +23,8 @@ install_stack
 usage 
 END
 
+STACK_URL="https://github.com/commercialhaskell/stack/releases/download/v1.1.2/stack-1.1.2-linux-x86_64.tar.gz"
+
 run () {
   echo "+" "$@"
   "$@"
@@ -48,6 +50,12 @@ executable_exists() {
   type "$1" > /dev/null 2>&1
 }
 
+cmd_install_redo() {
+  if [ -x "./setup.d/build-redo" ]; then
+    PREFIX=/usr/local ./setup.d/build-redo
+  fi
+}
+
 cmd_make_setup_readable() {
   if [ -d "./setup.d" ]; then
     chmod a+rX -R ./setup.d
@@ -63,16 +71,30 @@ cmd_make_setup_readable() {
   fi
 }
 
+cmd_test_stack_stuff() {
+  local url="$STACK_URL"
+  local leaf stem
+  leaf=$(basename "$url")
+  stem=${leaf%.tar.gz}
+  echo "leaf: $leaf"
+  echo "stem: $stem"
+}
+
 cmd_install_stack() {
-  local url='https://github.com/commercialhaskell/stack/releases/download/v0.1.2.0/stack-0.1.2.0-x86_64-linux.gz'
+  local url="$STACK_URL"
   local prog=/usr/local/bin/stack
   local tmp="$prog.tmp"
   local dir="/root/download"
   if [ ! -e "$prog" ]; then
-    [ -d "$dir" ] || run mkdir "/root/download"
+    [ -d "$dir" ] || run mkdir "$dir"
     fetch_url "$url" "$dir"
-    gunzip -c "$result" > "$tmp"
-    mv "$tmp" "$prog"
+    local leaf stem
+    leaf=$(basename "$url")
+    stem=${leaf%.tar.gz}
+    if [ -e "$dir/$leaf" ]; then
+      tar xOzf "$dir/$leaf" "$stem/stack" > "$tmp"
+      mv "$tmp" "$prog"
+    fi
   fi 
   run chmod a+rx "$prog"
 }
@@ -324,6 +346,7 @@ cmd_debian_init () {
 cmd_debian_stack_init() {
   cmd_debian_init
   cmd_install_stack
+  cmd_install_redo
 }
 
 cmd_build_pandoc_as_user() {
@@ -411,8 +434,16 @@ main () {
     set -e
     "cmd_$cmd" "$@"
   else
-    echo "unrecognized command: $1"
-    exit 1
+    cmd="cmd_${1//-/_}"
+    cmd_type=$(type -t "$cmd")
+    if [ "$cmd_type" == "function" ]; then
+      shift
+      set -e
+      "$cmd" "$@"
+    else
+      echo "unrecognized command: $1"
+      exit 1
+    fi
   fi
 }    
 

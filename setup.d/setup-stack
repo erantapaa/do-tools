@@ -1,0 +1,20 @@
+#!/bin/sh
+#
+# setup a users's ~/.stack directory
+
+stackdir="$HOME/.stack"
+resolver="lts-6.0"
+
+set -x
+set -e
+if [ ! -d "$stackdir" ]; then
+  mkdir "$stackdir"
+fi
+
+cat > "$stackdir/config.yaml" << __END__
+resolver: $resolver
+system-ghc: false
+__END__
+
+stack setup  --resolver "$resolver"
+

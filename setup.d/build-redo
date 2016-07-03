@@ -1,0 +1,41 @@
+#!/bin/sh
+#
+# Script to build and install redo into /usr/local
+#
+# Usage: PREFIX=/usr/local ./build-redo
+
+REPO=https://github.com/apenwarr/redo
+
+# PREFIX=/Users/erantapaa/tmp
+export PREFIX
+
+if [ "$PREFIX" = "" ]; then
+  echo "PREFIX is not set"
+  exit 1
+fi
+
+if [ ! -w "$PREFIX" ]; then
+  echo Not able to write to "$PREFIX"
+  exit 1
+fi
+
+set -e
+set -x
+
+cleanup() {
+  if [ "$WORKDIR" != "" ]; then
+    /bin/rm -rf "$WORKDIR"
+  fi
+}
+
+trap cleanup EXIT HUP INT TERM
+WORKDIR=$(mktemp -d -t "build-redo-XXXXXXXX" )
+
+( cd "$WORKDIR"
+  git clone "$REPO"
+  cd redo
+  make install
+)
+
+cleanup
+

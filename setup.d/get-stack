@@ -11,11 +11,13 @@ URL = "https://api.github.com/repos/commercialhaskell/stack/releases/latest"
 def compose(*funcs):
     return lambda x: functools.reduce(lambda v, f: f(v), funcs, x)
 
+# stack-1.1.2-linux-x86_64.tar.gz
+
 extract_stack_content = compose(
     lambda t: urllib.urlopen(t),
     lambda t: json.load(t)["assets"],
     lambda t: map(lambda x: x["browser_download_url"], t),
-    lambda t: filter(lambda x: re.match(u"^.*osx.tar.gz$", x) != None, t)[0],
+    lambda t: filter(lambda x: re.match(u"^.*linux-x86_64.tar.gz$", x) != None, t)[0],
     lambda t: urllib.urlopen(t),
     lambda t: tarfile.open(fileobj = t, mode="r|gz").extractall()
     )

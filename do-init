@@ -19,6 +19,6 @@ fi
 
 host="$1"
 scp -r ./setup.d root@"$host":
-scp ./setup root@"$host":setup
-ssh ./setup root@"$host" ./setup debian-init
+scp ./setup root@$host:setup
+ssh root@$host ./setup debian-stack-init
 
