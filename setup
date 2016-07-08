@@ -178,18 +178,18 @@ cmd_setup_user() {
     mkdir "$home/bash"
     chown "$user.$user" "$home/bash"
 
-    if [ -e fgm.bash ]; then
-      cp fgm.bash "$home/bash/"
+    if [ -e "setup.d/fgm.bash" ]; then
+      cp "setup.d/fgm.bash" "$home/bash/"
       chown "$user.$user" "$home/bash"
     fi
 
-    if [ -e "$home/.profile" ]; then
-      cat >> "$home.profile" << '__END__'
+    if [ -e "$home/.bashrc" ]; then
+      cat >> "$home.bashrc" << '__END__'
 
 [ -r "$HOME/bash/fgm.bash" ] && source "$HOME/bash/fgm.bash"
 
 __END__
-     curl https://raw.githubusercontent.com/erantapaa/fgm-bash/master/fgm.bash > "$home/bash/fgm.bash"
+     
     fi
   fi
 }
@@ -328,6 +328,15 @@ cmd_install_haskell_platform() {
   run ./install-haskell-platform.sh
 }
 
+cmd_debian_xenial_init() {
+  cat > /etc/apt/sources.list.d/offical-ubuntu-mirrors.list << 'END'
+deb mirror://mirrors.ubuntu.com/mirrors.txt xenial main restricted universe multiverse
+deb mirror://mirrors.ubuntu.com/mirrors.txt xenial-updates main restricted universe multiverse
+deb mirror://mirrors.ubuntu.com/mirrors.txt xenial-backports main restricted universe multiverse
+deb mirror://mirrors.ubuntu.com/mirrors.txt xenial-security main restricted universe multiverse
+END
+}
+
 cmd_debian_init () {
   assert_running_as_root
   cmd_setup_swap
@@ -335,7 +344,7 @@ cmd_debian_init () {
   cmd_make_setup_readable
   run_conditionally "/did-apt-get-update" apt-get update
   run apt-get install -y tmux
-  run apt-get install -y build-essential libgmp10-dev zlib1g-dev libglu1-mesa
+  run apt-get install -y build-essential libgmp10-dev zlib1g-dev libglu1-mesa freeglut3-dev
   run apt-get install -y libicu-dev
   run apt-get install -y lighttpd git
   run apt-get install -y python-dev python-setuptools python-pip
@@ -344,9 +353,15 @@ cmd_debian_init () {
 }
 
 cmd_debian_stack_init() {
+  cmd_debian_xenial_init
   cmd_debian_init
   cmd_install_stack
   cmd_install_redo
+  apt-get install -y parallel
+  apt-get install -y apt-file
+  apt-file update
+  apt-get install -y pkg-config
+  apt-get install -y moreutils
 }
 
 cmd_build_pandoc_as_user() {
