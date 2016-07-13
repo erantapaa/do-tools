@@ -178,6 +178,8 @@ cmd_setup_user() {
     mkdir "$home/bash"
     chown "$user.$user" "$home/bash"
 
+    mkdir "$home/bin"
+
     if [ -e "setup.d/fgm.bash" ]; then
       cp "setup.d/fgm.bash" "$home/bash/"
       chown "$user.$user" "$home/bash"
@@ -346,8 +348,8 @@ cmd_debian_init () {
   run apt-get install -y tmux
   run apt-get install -y build-essential libgmp10-dev zlib1g-dev libglu1-mesa freeglut3-dev
   run apt-get install -y libicu-dev
-  run apt-get install -y lighttpd git
-  run apt-get install -y python-dev python-setuptools python-pip
+  run apt-get install -y lighttpd git tree
+  run apt-get install -y python-dev python-setuptools python-pip  python-requests
 
   setup_gitconfig erantapaa "Erik Rantapaa" erantapaa@gmail.com
 }
@@ -361,7 +363,17 @@ cmd_debian_stack_init() {
   apt-get install -y apt-file
   apt-file update
   apt-get install -y pkg-config
-  apt-get install -y moreutils
+  apt-get install -y moreutils libtime-duration-perl libtimedate-perl
+}
+
+cmd_install_xenial_packages() {
+  local xp
+  xp="./setup.d/xenial-packages"
+  if [ ! -e "$xp" ]; then
+    echo "file does not exist: $xp"
+    return 1
+  fi
+  apt-get install -y $(cat "$xp")
 }
 
 cmd_build_pandoc_as_user() {

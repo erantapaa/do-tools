@@ -1,0 +1,15 @@
+#!/bin/sh
+
+case "$#" in
+  1) ;;
+  *) echo "bad usage"; exit 1;;
+esac
+
+REMOTE="$1"
+
+set -e
+set -x
+ssh "$REMOTE" "mkdir stack.git && cd stack.git && git init --bare"
+(cd ~/work/stack && git push "$USER@$REMOTE:stack.git")
+ssh "$REMOTE" "git clone stack.git"
+
