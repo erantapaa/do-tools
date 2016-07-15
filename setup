@@ -366,6 +366,11 @@ cmd_debian_stack_init() {
   apt-get install -y moreutils libtime-duration-perl libtimedate-perl
 }
 
+cmd_full_xenial_stack_init() {
+  cmd_debian_stack_init
+  cmd_install_xenial_packages
+}
+
 cmd_install_xenial_packages() {
   local xp
   xp="./setup.d/xenial-packages"

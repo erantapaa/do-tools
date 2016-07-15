@@ -1,0 +1,24 @@
+#!/bin/sh
+
+if [ ! -d "./setup.d" ]; then
+  echo missing ./setup.d
+  exit 1
+fi
+
+if [ ! -e "./setup" ]; then
+  echo missing ./setup
+  exit 1
+fi
+
+if [ "$1" = "" ]; then
+  echo usage: do-init host
+  exit 1
+fi
+
+# echo got here; exit 1
+
+host="$1"
+scp -r ./setup.d root@"$host":
+scp ./setup root@$host:setup
+ssh root@$host ./setup full-xenial-stack-init
+
